@@ -1,0 +1,217 @@
+import os
+import sys
+import trimesh
+
+import cv2
+import numpy as np
+import body_head_recovery.config as config
+from PIL import Image
+
+import torch
+import mediapipe as mp
+from body_head_recovery.utils.uv_utils import *
+from body_head_recovery.utils.read_obj import read_obj_file
+from body_head_recovery.optim.head_optim import HEAD_OPTIM
+from body_head_recovery.bodyrecon.body_recon import body_from_image_params
+
+from body_head_recovery.Color_Transfer.transfer_color import run_transfer
+from body_head_recovery.Inpainting.head_inpaint import run_inpaint
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import warnings
+warnings.filterwarnings('ignore')
+
+def get_face_rect(img):
+    results = config.face_detection.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    detection = results.detections[0]
+    box = detection.location_data.relative_bounding_box
+
+    height, width = img.shape[:2]
+    left = int(box.xmin * width)
+    top = int(box.ymin * height)
+    right = int(left + int(box.width * width))
+    bottom = int(top + int(box.height * height))
+    return top, left, right, bottom
+
+def get_face_landmarks(input_img):
+    image = cv2.cvtColor(input_img, cv2.COLOR_BGR2RGB)
+    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
+
+    detection_result = config.face_detector.detect(image)
+
+    face_landmarks_list = detection_result.face_landmarks
+
+    # Loop through the detected faces to visualize.
+    idx = 0
+    face_landmarks = face_landmarks_list[idx]
+
+    np_lmks = np.zeros((len(face_landmarks), 2))
+    # real_lmks = np.zeros((len(face_landmarks), 3))
+    for i, landmark in enumerate(face_landmarks):
+        x = int(landmark.x * input_img.shape[1])
+        y = int(landmark.y * input_img.shape[0])
+        np_lmks[i] = np.array([x, y])
+        # real_lmks[i] = np.array([landmark.x, landmark.y, landmark.z])
+    return np_lmks
+
+
+def possion_blending(src, tar, mask_compose, kernel_size):
+
+    kernel = np.ones((kernel_size, kernel_size), np.uint8) 
+    mask_compose = cv2.erode(mask_compose, kernel, iterations=1) 
+    monoMaskImage = cv2.split((mask_compose*255).astype(np.uint8))[0] # reducing the mask to a monochrome
+    br = cv2.boundingRect(monoMaskImage) # bounding rect (x,y,width,height)
+    centerOfBR = (br[0] + br[2] // 2, br[1] + br[3] // 2)
+
+    result = cv2.seamlessClone(src.astype(np.uint8), tar.astype(np.uint8),
+                                        (mask_compose*255).astype(np.uint8), centerOfBR,
+                                        cv2.NORMAL_CLONE)
+    
+    return result.astype(np.uint8)
+
+
+def head_recon(gender, image_f, image_r, image_l):
+    landmarks_f = get_face_landmarks(image_f)
+    landmarks_f = torch.tensor(landmarks_f)
+    croped_img_f, croped_lmks_f = crop_image(image_f, landmarks_f)
+    
+    landmarks_r = get_face_landmarks(image_r)
+    landmarks_r = torch.tensor(landmarks_r)
+    croped_img_r, croped_lmks_r = crop_image(image_r, landmarks_r)
+
+    landmarks_l = get_face_landmarks(image_l)
+    landmarks_l= torch.tensor(landmarks_l)
+    croped_img_l, croped_lmks_l = crop_image(image_l, landmarks_l)
+
+    # cv2.namedWindow("aa", cv2.WINDOW_NORMAL)
+    # cv2.resizeWindow("aa", 1024, 1024)
+    # for p1 in croped_lmks_f[config.idx_embedding_mp]:
+    #     cv2.circle(croped_img_f, (int(p1[0]), int(p1[1])), 2, (0, 0, 255), -1)
+    #     cv2.imshow("aa", croped_img_f)
+    #     cv2.waitKey(0)
+    # for p1 in croped_lmks_f[config.leftEyeIris]:
+    #     cv2.circle(croped_img_f, (int(p1[0]), int(p1[1])), 2, (0, 255, 0), -1)
+    #     cv2.imshow("aa", croped_img_f)
+    #     cv2.waitKey(0)
+    
+    # cv2.destroyAllWindows()
+    head_optim = HEAD_OPTIM(gender=gender, vis=False)
+
+    verts_show, verts_f, cam_f, verts_r, cam_r, verts_l, cam_l = head_optim(image_f=croped_img_f, landmarks_f=croped_lmks_f, 
+                                                                image_r=croped_img_r, landmarks_r=croped_lmks_r, 
+                                                                image_l=croped_img_l, landmarks_l=croped_lmks_l)
+    # convert vertices to cm for display in mobile
+    # verts_show = verts_show*100.
+    
+    texture_f = transfer_texture(body_verts=verts_f, cam=cam_f, croped_img=croped_img_f)
+    texture_r = transfer_texture(body_verts=verts_r, cam=cam_r, croped_img=croped_img_r)
+    texture_l = transfer_texture(body_verts=verts_l, cam=cam_l, croped_img=croped_img_l)
+
+    texture_lr = possion_blending(src=texture_l, tar=texture_r, mask_compose=config.uv_face_left, kernel_size=1)
+    final_texture = possion_blending(src=texture_f, tar=texture_lr, mask_compose=config.uv_face_front, kernel_size=5)
+    
+    final_texture = config.head_mask*final_texture + (1-config.head_mask)*255
+    gray_mask_eye = cv2.cvtColor(config.eye_mask, cv2.COLOR_BGR2GRAY)
+    ret_eye, thresh_mask_eye = cv2.threshold(gray_mask_eye, 127, 255, cv2.THRESH_BINARY)
+    mask_eye = np.where(thresh_mask_eye == 255)
+    final_texture[mask_eye] = config.eye_brown[mask_eye]
+    
+    return verts_show.cpu().squeeze(), final_texture.astype(np.uint8)
+
+
+def merger_body_head(gender, body_verts, image_f, image_r, image_l):
+
+    if image_f.shape[1] > 720:
+        image_f = cv2.resize(image_f, (720, int(720*image_f.shape[0]/image_f.shape[1])))
+    if image_r.shape[1] > 720:
+        image_r = cv2.resize(image_r, (720, int(720*image_r.shape[0]/image_r.shape[1])))
+    if image_l.shape[1] > 720:
+        image_l = cv2.resize(image_l, (720, int(720*image_l.shape[0]/image_l.shape[1])))
+
+    
+    head_verts, final_texture = head_recon(gender=gender, image_f=image_f, image_r=image_r, image_l=image_l)
+
+    # process body skin
+    src_img_cv = cv2.imread(f"body_head_recovery/data/texture/{gender}_vang_hair.png")
+    tar_img_cv = final_texture.copy()[272:272+410, 409:409+410]
+
+    transfered_img = run_transfer(src_img_cv=src_img_cv, tar_img_cv=tar_img_cv)
+
+    transfered_texture = config.full_face_mask*final_texture + (1-config.full_face_mask)*transfered_img
+    inpainted_texture = run_inpaint(orig_img=transfered_texture.astype(np.uint8))
+
+    # process inner_wear
+    if gender =="male":
+        inner_wear_img = config.innerwear_male
+        inner_wear_mask = config.innerwear_mask_male
+    else:
+        inner_wear_img = config.innerwear_female
+        inner_wear_mask = config.innerwear_mask_female
+    
+    complete_texture = inner_wear_mask*inner_wear_img + (1-inner_wear_mask)*inpainted_texture
+
+    scaleo, Ro, to = compute_similarity_transform_torch(head_verts[config.lowest_head_smplx_idx], body_verts[config.lowest_head_smplx_idx])
+    
+    trans_body_vert = scaleo * Ro.mm(head_verts.T) + to
+    trans_body_vert = trans_body_vert.T
+
+    body_verts[config.smplx2head_idx] = trans_body_vert[config.smplx2head_idx]
+
+    return body_verts.cpu(), complete_texture.astype(np.uint8)
+
+
+def merger_body_hair(body_head_verts, texture, hair_input_path, avatar_output_path):
+
+    ply_data = trimesh.load(hair_input_path)
+    hair_verts = torch.tensor(ply_data.vertices, dtype=torch.float32)
+
+    # R_x = torch.tensor([[1.0, 0.0, 0.0],
+    #                     [0., 0.0, -1.0],
+    #                     [0.0, 1.0, 0.0]])
+
+    # hair_verts_x = torch.mm(R_x, hair_verts.T)
+    # hair_verts_x = hair_verts_x.T
+
+    head_hair_verts = read_obj_file("body_head_recovery/models/head_model.obj")
+    head_hair_verts = torch.tensor(head_hair_verts, dtype=torch.float32)
+    scaleo, Ro, to = compute_similarity_transform_torch(head_hair_verts[config.hair_head_idx], body_head_verts[config.body_head_idx])
+    trans_hair_vert = scaleo * Ro.mm(hair_verts.T) + to
+    trans_hair_vert = trans_hair_vert.T
+
+    ply_data.vertices = trans_hair_vert
+
+    out_path = f"temp/"
+    if not os.path.exists(out_path):
+        # Create the directory
+        os.makedirs(out_path)
+
+    #save hair ply
+    full_body_glb = trimesh.load(f"body_head_recovery/data/body_temp/body_temp.glb")
+    material_body = trimesh.visual.texture.PBRMaterial(baseColorTexture=Image.fromarray(cv2.cvtColor(texture, cv2.COLOR_BGR2RGB)),
+                                                       roughnessFactor=0.9036020036098448,
+                                                       metallicFactor=0.0, doubleSided=True)
+    full_body_glb.geometry['body_temp.obj'].visual.material = material_body
+
+    map_body = config.idx_map_glb_obj.numpy().astype(np.int32)
+    full_body_glb.geometry['body_temp.obj'].visual.mesh.vertices = body_head_verts.cpu().numpy()[map_body]
+
+    full_body_glb.add_geometry(ply_data)
+    full_body_glb.export(avatar_output_path)
+    # # Save body verts 
+    # cv2.imwrite(out_path + f"final_texture.png", texture)
+    # with open(f'body_head_recovery/data/body_temp/body_temp.obj', 'r') as ft:
+    #     merge_lines = ft.readlines()
+    # with open(out_path + f"body_head.obj", 'w') as fm:
+    #     fm.write(merge_lines[0])
+    #     fm.write(merge_lines[1])
+    #     fm.write(merge_lines[2])
+    #     for v in body_verts:
+    #         fm.write(f"v {v[0]} {v[1]} {v[2]}\n")
+
+    #     for f in merge_lines[10479:]:
+    #         fm.write(f)
+
+    # shutil.copyfile("body_head_recovery/data/body_temp/body_temp.mtl", out_path + f"body_temp.mtl")
+
+
