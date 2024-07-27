@@ -1,5 +1,6 @@
 from .base_options import BaseOptions
-
+import argparse
+import os
 
 class TestOptions(BaseOptions):
     def initialize(self):
@@ -14,3 +15,20 @@ class TestOptions(BaseOptions):
         self.parser.add_argument('--ab_bin', type=int, default=64, help='ab_bin')
         self.parser.add_argument('--l_bin', type=int, default=8, help='l_bin')
         self.isTrain = False
+
+
+
+# import yaml
+
+# par = os.getcwd()
+# file_path = os.path.join(par, 'HairStepInfer', 'lib', 'hair_config.yml')
+# def load_config_from_yaml(file_path):
+#     with open(file_path, 'r') as file:
+#         config = yaml.safe_load(file)
+#     return config
+# # hair_options = BaseOptions().parse()
+# def dict_to_namespace(config_dict):
+#     return argparse.Namespace(**config_dict)
+# config_dict = load_config_from_yaml(file_path)
+# # Convert and print the Namespace object
+# namespace_config = dict_to_namespace(config_dict)

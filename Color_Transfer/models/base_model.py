@@ -6,12 +6,12 @@ class BaseModel():
     def name(self):
         return 'BaseModel'
 
-    def initialize(self, opt):
-        self.opt = opt
-        self.gpu_ids = opt.gpu_ids
-        self.isTrain = opt.isTrain
+    def initialize(self):
+
+        self.gpu_ids = [0]
+        self.isTrain = False
         self.Tensor = torch.cuda.FloatTensor if self.gpu_ids else torch.Tensor
-        self.save_dir = opt.checkpoints_dir
+        self.save_dir = 'body_head_recovery/Color_Transfer/checkpoints'
 
     def set_input(self, input):
         self.input = input

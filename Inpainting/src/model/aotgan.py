@@ -5,9 +5,10 @@ from torch.nn.utils import spectral_norm
 
 from .common import BaseNetwork
 
+from body_head_recovery.Inpainting import config_inpaint
 
 class InpaintGenerator(BaseNetwork):
-    def __init__(self, args):  # 1046
+    def __init__(self):  # 1046
         super(InpaintGenerator, self).__init__()
 
         self.encoder = nn.Sequential(
@@ -20,7 +21,7 @@ class InpaintGenerator(BaseNetwork):
             nn.ReLU(True),
         )
 
-        self.middle = nn.Sequential(*[AOTBlock(256, args.rates) for _ in range(args.block_num)])
+        self.middle = nn.Sequential(*[AOTBlock(256, config_inpaint.rates) for _ in range(config_inpaint.block_num)])
 
         self.decoder = nn.Sequential(
             UpConv(256, 128), nn.ReLU(True), UpConv(128, 64), nn.ReLU(True), nn.Conv2d(64, 3, 3, stride=1, padding=1)

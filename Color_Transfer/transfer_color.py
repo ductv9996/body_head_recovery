@@ -1,8 +1,7 @@
 import cv2
 import torch
 import numpy as np
-from .options.test_options import TestOptions
-from .data.data_loader import CreateDataLoader
+
 from .models.models import create_model
 import torchvision.utils as utils
 from body_head_recovery.Color_Transfer.util import util
@@ -11,20 +10,8 @@ from PIL import Image
 from skimage import color
 import torchvision.transforms as transforms
 
+model = create_model()
 
-opt = TestOptions().parse()
-opt.nThreads = 1
-opt.batchSize = 1
-opt.serial_batches = True
-opt.no_flip = True
-
-# data_loader = CreateDataLoader(opt)
-# dataset = data_loader.load_data()
-model = create_model(opt)
-opt.is_psnr = True
-
-summary_dir = opt.results_dir
-util.mkdirs([summary_dir])
 
 def RGB2LAB(I):
     # AB 98.2330538631 -86.1830297444 94.4781222765 -107.857300207

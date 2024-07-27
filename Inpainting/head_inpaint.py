@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 import torch
 from torchvision.transforms import ToTensor
-from .src.utils.option import args
 from .src.model.aotgan import InpaintGenerator
+from body_head_recovery.Inpainting import config_inpaint
 
 def postprocess(image):
     image = torch.clamp(image, -1.0, 1.0)
@@ -12,12 +12,11 @@ def postprocess(image):
     image = image.cpu().numpy().astype(np.uint8)
     return image
 
+model = InpaintGenerator()
+model.load_state_dict(torch.load(config_inpaint.pre_train, map_location="cuda"))
+model.eval()
 
 def run_inpaint(orig_img):
-
-    model = InpaintGenerator(args)
-    model.load_state_dict(torch.load(args.pre_train, map_location="cuda"))
-    model.eval()
 
     crop_img = orig_img[:1220, :1220]
 

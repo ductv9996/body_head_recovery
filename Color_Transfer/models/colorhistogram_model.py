@@ -8,36 +8,36 @@ from . import networks
 import torch.nn as nn
 
 import torch.nn.functional as F
-
+from body_head_recovery.Color_Transfer import config_color
 
 class ColorHistogram_Model(BaseModel):
     def name(self):
         return 'ColorHistogram_Model'
 
-    def initialize(self, opt):
-        BaseModel.initialize(self, opt)
+    def initialize(self):
+        BaseModel.initialize(self)
 
-        nb = opt.batchSize
-        size = opt.fineSize 
+        nb = config_color.batchSize
+        size = config_color.fineSize 
 
-        self.hist_l = opt.l_bin
-        self.hist_ab = opt.ab_bin
-        self.img_type = opt.img_type
+        self.hist_l = config_color.l_bin
+        self.hist_ab = config_color.ab_bin
+        self.img_type = config_color.img_type
         self.pad = 30
         self.reppad = nn.ReplicationPad2d(self.pad)
 
-        self.IRN = networks.IRN(3, 3, opt.ngf, opt.network, opt.norm, not opt.no_dropout, opt.init_type, self.gpu_ids)
-        self.HEN = networks.HEN((self.hist_l+1), 64, opt.ngf, opt.network_H, opt.norm, not opt.no_dropout, opt.init_type, self.gpu_ids).cuda()
+        self.IRN = networks.IRN(3, 3, config_color.ngf, config_color.network, config_color.norm, config_color.no_dropout, config_color.init_type, self.gpu_ids)
+        self.HEN = networks.HEN((self.hist_l+1), 64, config_color.ngf, config_color.network_H, config_color.norm, config_color.no_dropout, config_color.init_type, self.gpu_ids).cuda()
 
-        if not self.isTrain or opt.continue_train:
+        if not self.isTrain or config_color.continue_train:
             
-            which_epoch = opt.which_epoch
+            which_epoch = config_color.which_epoch
           
             self.load_network(self.IRN, 'G_A', which_epoch)
             self.load_network(self.HEN, 'C_A', which_epoch)
 
     def set_input(self, input):
-        AtoB = self.opt.which_direction == 'AtoB'
+        AtoB = config_color.which_direction == 'AtoB'
         
         input_A = input['A']
         input_B = input['B']
@@ -113,7 +113,7 @@ class ColorHistogram_Model(BaseModel):
                 self.final_result_tar = hist_tar_feat.repeat(1,1,self.inp.size(2),self.inp.size(3))
 
 
-            if self.opt.is_SR:
+            if config_color.is_SR:
                 for i in range(0, self.input_SegNum):
                     seg_num_A = torch.sum(torch.sum(self.A_seg == i ,1),1)
                     seg_num_B = torch.sum(torch.sum(self.B_seg == i ,1),1)
@@ -126,7 +126,7 @@ class ColorHistogram_Model(BaseModel):
             self.tar_H = self.reppad(hist_tar_feat_tile)
 
             # Network Fake
-            if self.opt.is_SR:
+            if config_color.is_SR:
                 self.tar_H_SR  = self.reppad(self.final_result_tar)
                 _, _, _, _, out = self.IRN(self.inp, self.inp_H , self.tar_H_SR)
             else:
