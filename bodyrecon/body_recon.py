@@ -64,6 +64,6 @@ def body_from_image_params(gender, body_image_f, height_m, weight_kg):
     measurement_user = measure_mesh(faces=faces, np_verts=verts_show.cpu().numpy().squeeze())
 
     # json_measurement_user = json.dumps(str(measurement_user))
-
+    measurement_user = {key: str(value) for key, value in measurement_user.items()}
     return verts_show.cpu().squeeze(), measurement_user
 
