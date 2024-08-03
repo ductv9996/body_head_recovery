@@ -1,6 +1,6 @@
+import bpy
 import os
 import sys
-import trimesh
 
 import cv2
 import numpy as np
@@ -161,57 +161,220 @@ def merger_body_head(gender, body_verts, image_f, image_r, image_l):
     return body_verts.cpu(), complete_texture.astype(np.uint8)
 
 
-def merger_body_hair(body_head_verts, texture, hair_input_path, avatar_output_path):
+# def merger_body_hair(body_head_verts, texture, hair_input_path, avatar_output_path):
 
-    ply_data = trimesh.load(hair_input_path)
-    hair_verts = torch.tensor(ply_data.vertices, dtype=torch.float32)
+#     ply_data = trimesh.load(hair_input_path)
+#     hair_verts = torch.tensor(ply_data.vertices, dtype=torch.float32)
 
-    # R_x = torch.tensor([[1.0, 0.0, 0.0],
-    #                     [0., 0.0, -1.0],
-    #                     [0.0, 1.0, 0.0]])
+#     # R_x = torch.tensor([[1.0, 0.0, 0.0],
+#     #                     [0., 0.0, -1.0],
+#     #                     [0.0, 1.0, 0.0]])
 
-    # hair_verts_x = torch.mm(R_x, hair_verts.T)
-    # hair_verts_x = hair_verts_x.T
+#     # hair_verts_x = torch.mm(R_x, hair_verts.T)
+#     # hair_verts_x = hair_verts_x.T
+
+#     head_hair_verts = read_obj_file("body_head_recovery/models/head_model.obj")
+#     head_hair_verts = torch.tensor(head_hair_verts, dtype=torch.float32)
+#     scaleo, Ro, to = compute_similarity_transform_torch(head_hair_verts[config.hair_head_idx], body_head_verts[config.body_head_idx])
+#     trans_hair_vert = scaleo * Ro.mm(hair_verts.T) + to
+#     trans_hair_vert = trans_hair_vert.T
+
+#     ply_data.vertices = trans_hair_vert
+
+#     out_path = f"temp/"
+#     if not os.path.exists(out_path):
+#         # Create the directory
+#         os.makedirs(out_path)
+
+#     #save hair ply
+#     full_body_glb = trimesh.load(f"body_head_recovery/data/body_temp/body_temp.glb")
+#     material_body = trimesh.visual.texture.PBRMaterial(baseColorTexture=Image.fromarray(cv2.cvtColor(texture, cv2.COLOR_BGR2RGB)),
+#                                                        roughnessFactor=0.9036020036098448,
+#                                                        metallicFactor=0.0, doubleSided=True)
+#     full_body_glb.geometry['body_temp.obj'].visual.material = material_body
+
+#     map_body = config.idx_map_glb_obj.numpy().astype(np.int32)
+#     full_body_glb.geometry['body_temp.obj'].visual.mesh.vertices = body_head_verts.cpu().numpy()[map_body]
+
+#     full_body_glb.add_geometry(ply_data)
+#     full_body_glb.export(avatar_output_path)
+#     # # Save body verts 
+#     # cv2.imwrite(out_path + f"final_texture.png", texture)
+#     # with open(f'body_head_recovery/data/body_temp/body_temp.obj', 'r') as ft:
+#     #     merge_lines = ft.readlines()
+#     # with open(out_path + f"body_head.obj", 'w') as fm:
+#     #     fm.write(merge_lines[0])
+#     #     fm.write(merge_lines[1])
+#     #     fm.write(merge_lines[2])
+#     #     for v in body_verts:
+#     #         fm.write(f"v {v[0]} {v[1]} {v[2]}\n")
+
+#     #     for f in merge_lines[10479:]:
+#     #         fm.write(f)
+
+#     # shutil.copyfile("body_head_recovery/data/body_temp/body_temp.mtl", out_path + f"body_temp.mtl")
+
+def merger_body_hair(body_head_verts, texture, hair_result, avatar_output_path):
+
+    # process hair 
+    hair_verts = np.asarray(hair_result['pc_all_valid'])
+    lines = np.asarray(hair_result['lines'])
+    colors = hair_result["colors"]
+
+    hair_verts = torch.tensor(hair_verts, dtype=torch.float32)
+    hair_faces = []
+    for id_f in range(lines.shape[0] -4):
+        if lines[id_f][1] == lines[id_f +1][0]:
+            hair_faces.append([lines[id_f][0], lines[id_f][1], lines[id_f+1][1]])
+    hair_faces = np.array(hair_faces, dtype=np.int32)
 
     head_hair_verts = read_obj_file("body_head_recovery/models/head_model.obj")
     head_hair_verts = torch.tensor(head_hair_verts, dtype=torch.float32)
     scaleo, Ro, to = compute_similarity_transform_torch(head_hair_verts[config.hair_head_idx], body_head_verts[config.body_head_idx])
     trans_hair_vert = scaleo * Ro.mm(hair_verts.T) + to
-    trans_hair_vert = trans_hair_vert.T
+    trans_hair_vert = trans_hair_vert.T.numpy()
 
-    ply_data.vertices = trans_hair_vert
+    trans_head_hair_verts = scaleo * Ro.mm(head_hair_verts.T) + to
+    trans_head_hair_verts = trans_head_hair_verts.T.numpy()
 
-    out_path = f"temp/"
-    if not os.path.exists(out_path):
-        # Create the directory
-        os.makedirs(out_path)
+    rotation_matrix = np.array([
+        [1, 0, 0],
+        [0, 0, 1],
+        [0, -1, 0]
+    ])
 
-    #save hair ply
-    full_body_glb = trimesh.load(f"body_head_recovery/data/body_temp/body_temp.glb")
-    material_body = trimesh.visual.texture.PBRMaterial(baseColorTexture=Image.fromarray(cv2.cvtColor(texture, cv2.COLOR_BGR2RGB)),
-                                                       roughnessFactor=0.9036020036098448,
-                                                       metallicFactor=0.0, doubleSided=True)
-    full_body_glb.geometry['body_temp.obj'].visual.material = material_body
+    trans_hair_vert = trans_hair_vert.dot(rotation_matrix)
 
-    map_body = config.idx_map_glb_obj.numpy().astype(np.int32)
-    full_body_glb.geometry['body_temp.obj'].visual.mesh.vertices = body_head_verts.cpu().numpy()[map_body]
+    bpy_refresh()
+    hair_obj = process_hair(np_verts=trans_hair_vert, np_faces=hair_faces, colors=colors)
 
-    full_body_glb.add_geometry(ply_data)
-    full_body_glb.export(avatar_output_path)
-    # # Save body verts 
-    # cv2.imwrite(out_path + f"final_texture.png", texture)
-    # with open(f'body_head_recovery/data/body_temp/body_temp.obj', 'r') as ft:
-    #     merge_lines = ft.readlines()
-    # with open(out_path + f"body_head.obj", 'w') as fm:
-    #     fm.write(merge_lines[0])
-    #     fm.write(merge_lines[1])
-    #     fm.write(merge_lines[2])
-    #     for v in body_verts:
-    #         fm.write(f"v {v[0]} {v[1]} {v[2]}\n")
+    process_body_bpy(np_verts=body_head_verts.numpy(), texture_cv=texture)
+    # Select the object to export
+    bpy.ops.object.select_all(action="SELECT")
 
-    #     for f in merge_lines[10479:]:
-    #         fm.write(f)
-
-    # shutil.copyfile("body_head_recovery/data/body_temp/body_temp.mtl", out_path + f"body_temp.mtl")
+    # Export the mesh to .glb format
+    bpy.ops.export_scene.gltf(filepath=avatar_output_path, export_format='GLB', use_selection=True)
 
 
+def bpy_refresh():
+    for item in bpy.data.objects:
+        bpy.data.objects.remove(item, do_unlink=True)
+
+    for item in bpy.data.meshes:
+        bpy.data.meshes.remove(item, do_unlink=True)
+
+    for item in bpy.data.materials:
+        bpy.data.materials.remove(item, do_unlink=True)
+
+    for item in bpy.data.textures:
+        bpy.data.textures.remove(item, do_unlink=True)
+
+    for item in bpy.data.images:
+        if item.name == "Render Result": continue
+        bpy.data.images.remove(item, do_unlink=True)
+
+    for item in bpy.data.lights:
+        bpy.data.lights.remove(item, do_unlink=True)
+
+    for item in bpy.data.cameras:
+        bpy.data.cameras.remove(item, do_unlink=True)
+        # Clear existing data
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+        
+
+def process_hair(np_verts, np_faces, colors):
+    # Create mesh and object
+    hair_mesh = bpy.data.meshes.new(name='HairMesh')
+    hair_obj = bpy.data.objects.new(name='Hair', object_data=hair_mesh)
+
+    # Link object to collection
+    bpy.context.collection.objects.link(hair_obj)
+
+    # Create mesh from given vertices and faces
+    hair_mesh.from_pydata(np_verts.tolist(), [], np_faces.tolist())
+    hair_mesh.update()
+
+    # Create material
+    material = bpy.data.materials.new(name="NMaterial")
+    material.diffuse_color = (colors[0][0], colors[0][1], colors[0][2], 1.0)
+
+    # Assign material to object
+    if hair_obj.data.materials:
+        hair_obj.data.materials[0] = material
+    else:
+        hair_obj.data.materials.append(material)
+
+    # Add solidify modifier to make the mesh thicker
+    solidify_modifier = hair_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
+    solidify_modifier.thickness = 0.001
+
+    # Apply the solidify modifier
+    bpy.context.view_layer.objects.active = hair_obj
+    bpy.ops.object.modifier_apply(modifier=solidify_modifier.name)
+
+
+    # Add decimate modifier to reduce polygon count
+    decimate_modifier = hair_obj.modifiers.new(name="Decimate", type='DECIMATE')
+    decimate_modifier.ratio = 0.5  # Adjust the ratio as needed (0.0 to 1.0)
+
+    # Apply the decimate modifier
+    bpy.ops.object.modifier_apply(modifier=decimate_modifier.name)
+
+    return hair_obj
+
+
+def process_body_bpy(np_verts, texture_cv):
+    # flip image corresponds with texture in blender
+    texture_cv = np.flipud(texture_cv)
+    texture_cv = cv2.cvtColor(texture_cv, cv2.COLOR_BGR2RGBA)  # Convert from BGR to RGB
+
+    # Import the .obj file
+    bpy.ops.wm.obj_import(filepath="body_head_recovery/data/body_temp/body_temp.obj")
+
+    bpy.ops.object.select_all(action="DESELECT")
+    
+    bpy.data.objects["body_temp"].select_set(True)
+    # Set the selected object as the active object
+    bpy.context.view_layer.objects.active = bpy.data.objects["body_temp"]
+
+    # Assume the imported object is the active object
+    body_object = bpy.context.selected_objects[0]
+    for i, vert in enumerate(body_object.data.vertices):
+        vert.co = np_verts[i]
+
+    # Get the existing material (assuming there's only one material on the object)
+    material = body_object.data.materials[0]
+
+    # Enable 'Use nodes' for the material if not already enabled
+    if not material.use_nodes:
+        material.use_nodes = True
+
+    # Get the material's node tree
+    nodes = material.node_tree.nodes
+
+    # Find the Principled BSDF node
+    principled_bsdf = None
+    for node in nodes:
+        if node.type == 'BSDF_PRINCIPLED':
+            principled_bsdf = node
+            break
+
+    if principled_bsdf is None:
+        raise Exception("No Principled BSDF shader found in the material")
+
+    # Create a new Image Texture node
+    texture_node = nodes.new(type='ShaderNodeTexImage')
+
+    # Create a Blender image and fill it with the OpenCV image data
+    image_height, image_width, _ = texture_cv.shape
+    texture_image = bpy.data.images.new(name="TextureImage", width=image_width, height=image_height)
+
+    # Flatten the image array and assign it to Blender image pixels
+    texture_image.pixels = (texture_cv / 255.0).flatten()
+
+    # Assign the Blender image to the texture node
+    texture_node.image = texture_image
+
+    # Link the texture node to the Base Color input of the Principled BSDF node
+    links = material.node_tree.links
+    links.new(texture_node.outputs['Color'], principled_bsdf.inputs['Base Color'])
