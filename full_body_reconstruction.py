@@ -120,7 +120,48 @@ def head_recon(gender, image_f, image_r, image_l):
     return verts_show.cpu().squeeze(), final_texture.astype(np.uint8)
 
 
-def merger_body_head(gender, body_verts, image_f, image_r, image_l):
+# def merger_body_head(gender, body_verts, image_f, image_r, image_l):
+
+#     if image_f.shape[1] > 720:
+#         image_f = cv2.resize(image_f, (720, int(720*image_f.shape[0]/image_f.shape[1])))
+#     if image_r.shape[1] > 720:
+#         image_r = cv2.resize(image_r, (720, int(720*image_r.shape[0]/image_r.shape[1])))
+#     if image_l.shape[1] > 720:
+#         image_l = cv2.resize(image_l, (720, int(720*image_l.shape[0]/image_l.shape[1])))
+
+    
+#     head_verts, final_texture = head_recon(gender=gender, image_f=image_f, image_r=image_r, image_l=image_l)
+
+#     # process body skin
+#     src_img_cv = cv2.imread(f"body_head_recovery/data/texture/{gender}_vang_hair.png")
+#     tar_img_cv = final_texture.copy()[272:272+410, 409:409+410]
+
+#     transfered_img = run_transfer(src_img_cv=src_img_cv, tar_img_cv=tar_img_cv)
+
+#     transfered_texture = config.full_face_mask*final_texture + (1-config.full_face_mask)*transfered_img
+#     inpainted_texture = run_inpaint(orig_img=transfered_texture.astype(np.uint8))
+
+#     # process inner_wear
+#     if gender =="male":
+#         inner_wear_img = config.innerwear_male
+#         inner_wear_mask = config.innerwear_mask_male
+#     else:
+#         inner_wear_img = config.innerwear_female
+#         inner_wear_mask = config.innerwear_mask_female
+    
+#     complete_texture = inner_wear_mask*inner_wear_img + (1-inner_wear_mask)*inpainted_texture
+
+#     scaleo, Ro, to = compute_similarity_transform_torch(head_verts[config.lowest_head_smplx_idx], body_verts[config.lowest_head_smplx_idx])
+    
+#     trans_body_vert = scaleo * Ro.mm(head_verts.T) + to
+#     trans_body_vert = trans_body_vert.T
+
+#     body_verts[config.smplx2head_idx] = trans_body_vert[config.smplx2head_idx]
+
+#     return body_verts.cpu(), complete_texture.astype(np.uint8)
+
+
+def run_head(gender, image_f, image_r, image_l):
 
     if image_f.shape[1] > 720:
         image_f = cv2.resize(image_f, (720, int(720*image_f.shape[0]/image_f.shape[1])))
@@ -151,6 +192,14 @@ def merger_body_head(gender, body_verts, image_f, image_r, image_l):
     
     complete_texture = inner_wear_mask*inner_wear_img + (1-inner_wear_mask)*inpainted_texture
 
+    return head_verts.cpu(), complete_texture.astype(np.uint8)
+
+
+def merger_body_head(body_verts, head_verts):
+
+    body_verts = torch.tensor(body_verts, dtype=torch.float32)
+    head_verts = torch.tensor(head_verts, dtype=torch.float32)
+
     scaleo, Ro, to = compute_similarity_transform_torch(head_verts[config.lowest_head_smplx_idx], body_verts[config.lowest_head_smplx_idx])
     
     trans_body_vert = scaleo * Ro.mm(head_verts.T) + to
@@ -158,7 +207,7 @@ def merger_body_head(gender, body_verts, image_f, image_r, image_l):
 
     body_verts[config.smplx2head_idx] = trans_body_vert[config.smplx2head_idx]
 
-    return body_verts.cpu(), complete_texture.astype(np.uint8)
+    return body_verts.cpu()
 
 
 # def merger_body_hair(body_head_verts, texture, hair_input_path, avatar_output_path):
