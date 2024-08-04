@@ -296,7 +296,10 @@ def process_hair(np_verts, np_faces, colors):
 
     # Create material
     material = bpy.data.materials.new(name="NMaterial")
-    material.diffuse_color = (colors[0][0], colors[0][1], colors[0][2], 1.0)
+    if colors[0][0] > 1. or colors[0][1] >1 or colors[0][2] > 1:
+        material.diffuse_color = (colors[0][0]/255., colors[0][1]/255., colors[0][2]/255., 1.0)
+    else:
+        material.diffuse_color = (colors[0][0], colors[0][1], colors[0][2], 1.0)
 
     # Assign material to object
     if hair_obj.data.materials:
