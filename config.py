@@ -24,6 +24,12 @@ MODEL_PATH = "body_head_recovery/models/"
 MODEL_TYPE = "smplx"
 NUM_BETAS = 300
 
+SMPLX_JOINT_NAMES = [
+    'pelvis','left_hip','right_hip','spine1','left_knee','right_knee','spine2','left_ankle','right_ankle','spine3', 'left_foot','right_foot','neck','left_collar','right_collar','head','left_shoulder','right_shoulder','left_elbow', 'right_elbow','left_wrist','right_wrist',
+    'jaw','left_eye_smplhf','right_eye_smplhf','left_index1','left_index2','left_index3','left_middle1','left_middle2','left_middle3','left_pinky1','left_pinky2','left_pinky3','left_ring1','left_ring2','left_ring3','left_thumb1','left_thumb2','left_thumb3','right_index1','right_index2','right_index3','right_middle1','right_middle2','right_middle3','right_pinky1','right_pinky2','right_pinky3','right_ring1','right_ring2','right_ring3','right_thumb1','right_thumb2','right_thumb3'
+]
+NUM_SMPLX_JOINTS = len(SMPLX_JOINT_NAMES)
+
 idx_map_glb_obj = torch.load("body_head_recovery/mapping/idx_map_glb_obj.pt")
 
 # # head texture params
@@ -41,7 +47,7 @@ innerwear_female = cv2.imread("body_head_recovery/data/texture/innerwear_female.
 innerwear_mask_female = cv2.imread("body_head_recovery/data/texture/mask_innerwear_female.png")/255.
 
 
-full_face_mask = cv2.imread("body_head_recovery/data/body_params/mask_full_face.png")/255.
+full_face_mask = cv2.imread("body_head_recovery/data/body_params/head_mask.png")/255.
 
 eye_mask = cv2.imread('body_head_recovery/data/body_params/mask_eye.png')
 head_mask = cv2.imread("body_head_recovery/data/body_params/head_mask.png")/255.
@@ -151,7 +157,7 @@ options = vision.FaceLandmarkerOptions(base_options=base_options,
                                        num_faces=1, min_face_detection_confidence=0.2)
 face_detector = vision.FaceLandmarker.create_from_options(options)
 
-render = SRenderY(image_size, obj_filename="body_head_recovery/data/smplx_uv/smplx_uv.obj", uv_size=2048).to(DEVICE)
+render = SRenderY(image_size, obj_filename="body_head_recovery/data/body_temp/body_temp.obj", uv_size=2048).to(DEVICE)
 
 
 idx_face = [2433, 2595, 2497, 2514, 2521, 2540, 3809, 1348, 1014, 1164, 979, 908, 2819, 2812, 3541, 1695, 1702,
