@@ -52,19 +52,29 @@ def body_from_image_params(gender, body_image_f, height_m, weight_kg):
     expression_f = torch.zeros(1,10,device=config.DEVICE)
     leye_pose_f = torch.zeros(1,3,device=config.DEVICE)
     reye_pose_f = torch.zeros(1,3,device=config.DEVICE)
+    body_pose = torch.zeros(1, 63, device=config.DEVICE, dtype=torch.float32)
+    body_pose[0, 38] = -np.pi/18
+    body_pose[0, 41] = np.pi/18
+    body_pose[0, 47] = -np.pi/4.5
+    body_pose[0, 50] = np.pi/4.5
     model_show = model_smplx(global_orient=global_orient, 
                              betas=betas_10,
+                             body_pose=body_pose,
                              jaw_pose=jaw_pose_f,
                              expression=expression_f,
                              leye_pose=leye_pose_f,
                              reye_pose=reye_pose_f)
     verts_show = model_show.vertices.detach().clone()
+    joints_pos = model_show.joints.detach().clone()
+
+    joints_pos[:, :, 1] = joints_pos[:, :, 1] - torch.min(verts_show[:, :, 1])
     verts_show[:, :, 1] = verts_show[:, :, 1] - torch.min(verts_show[:, :, 1])
+    
     
     faces = model_smplx.faces
     measurement_user = measure_mesh(faces=faces, np_verts=verts_show.cpu().numpy().squeeze())
 
     # json_measurement_user = json.dumps(str(measurement_user))
     measurement_user = {key: str(np.round(value*100 + np.random.rand(), 2)) for key, value in measurement_user.items()}
-    return verts_show.cpu().squeeze(), measurement_user
+    return verts_show.cpu().squeeze(),joints_pos.cpu().squeeze(), measurement_user
 
