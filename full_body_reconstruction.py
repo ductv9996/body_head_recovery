@@ -175,7 +175,7 @@ def run_head(gender, image_f, image_r, image_l):
 
     # process body skin
     src_img_cv = cv2.imread(f"body_head_recovery/data/texture/{gender}_vang_hair.png")
-    tar_img_cv = final_texture.copy()[272:272+410, 409:409+410]
+    tar_img_cv = final_texture.copy()[232:232+410, 402:402+410]
 
     transfered_img = run_transfer(src_img_cv=src_img_cv, tar_img_cv=tar_img_cv)
 
