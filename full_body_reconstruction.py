@@ -305,9 +305,9 @@ def merger_body_hair(body_head_verts, texture, hair_result, avatar_output_path):
     trans_hair_vert = trans_hair_vert.dot(rotation_matrix)
 
     bpy_refresh()
-    hair_obj = process_hair(np_verts=trans_hair_vert, np_faces=hair_faces, colors=colors)
+    # hair_obj = process_hair(np_verts=trans_hair_vert, np_faces=hair_faces, colors=colors)
     human_fbx = process_body_bpy(np_body_verts=body_head_verts.numpy(),np_body_joints=body_joint_np, texture_cv=texture)
-    transfer_weight(source_fbx=human_fbx, target_name="Hair")
+    # transfer_weight(source_fbx=human_fbx, target_name="Hair")
     # Select the object to export
     bpy.ops.object.select_all(action="SELECT")
 
