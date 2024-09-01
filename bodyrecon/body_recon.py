@@ -76,5 +76,13 @@ def body_from_image_params(gender, body_image_f, height_m, weight_kg):
 
     # json_measurement_user = json.dumps(str(measurement_user))
     measurement_user = {key: str(np.round(value*100 + np.random.rand(), 2)) for key, value in measurement_user.items()}
-    return verts_show.cpu().squeeze(),joints_pos.cpu().squeeze(), measurement_user
+
+    verts_show = 1. * verts_show.cpu().squeeze()
+    joints_pos = 1. * joints_pos.cpu().squeeze()
+
+    joints_pos = joints_pos[:, :55]
+
+    verts_joints = torch.cat([verts_show, joints_pos], dim=0)
+
+    return verts_joints, measurement_user
 

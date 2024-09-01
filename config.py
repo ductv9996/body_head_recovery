@@ -30,7 +30,9 @@ SMPLX_JOINT_NAMES = [
 ]
 NUM_SMPLX_JOINTS = len(SMPLX_JOINT_NAMES)
 
-idx_map_glb_obj = torch.load("body_head_recovery/mapping/idx_map_glb_obj.pt")
+body_temp_fbx_path = "body_head_recovery/data/body_temp/male.fbx"
+hairstep_head_temp_path = "body_head_recovery/models/head_model.obj"
+texture_dir = "body_head_recovery/data/texture"
 
 # # head texture params
 # faces_expand = torch.load("body_head_recovery/data/body_params/face_expand.pt")

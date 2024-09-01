@@ -17,6 +17,8 @@ from body_head_recovery.bodyrecon.body_recon import body_from_image_params
 from body_head_recovery.Color_Transfer.transfer_color import run_transfer
 from body_head_recovery.Inpainting.head_inpaint import run_inpaint
 
+from mathutils import Vector, Quaternion
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import warnings
@@ -174,7 +176,7 @@ def run_head(gender, image_f, image_r, image_l):
     head_verts, final_texture = head_recon(gender=gender, image_f=image_f, image_r=image_r, image_l=image_l)
 
     # process body skin
-    src_img_cv = cv2.imread(f"body_head_recovery/data/texture/{gender}_vang_hair.png")
+    src_img_cv = cv2.imread(f"{config.texture_dir}/{gender}_vang_hair.png")
     tar_img_cv = final_texture.copy()[232:232+410, 402:402+410]
 
     transfered_img = run_transfer(src_img_cv=src_img_cv, tar_img_cv=tar_img_cv)
@@ -197,17 +199,22 @@ def run_head(gender, image_f, image_r, image_l):
 
 def merger_body_head(body_verts, head_verts):
 
-    body_verts = torch.tensor(body_verts, dtype=torch.float32)
+    body_verts_only = body_verts[:10475]
+    body_joints = torch.tensor(body_verts[10475:], dtype=torch.float32)
+
+    body_verts_only = torch.tensor(body_verts_only, dtype=torch.float32)
     head_verts = torch.tensor(head_verts, dtype=torch.float32)
 
-    scaleo, Ro, to = compute_similarity_transform_torch(head_verts[config.lowest_head_smplx_idx], body_verts[config.lowest_head_smplx_idx])
+    scaleo, Ro, to = compute_similarity_transform_torch(head_verts[config.lowest_head_smplx_idx], body_verts_only[config.lowest_head_smplx_idx])
     
     trans_body_vert = scaleo * Ro.mm(head_verts.T) + to
     trans_body_vert = trans_body_vert.T
 
-    body_verts[config.smplx2head_idx] = trans_body_vert[config.smplx2head_idx]
+    body_verts_only[config.smplx2head_idx] = trans_body_vert[config.smplx2head_idx]
 
-    return body_verts.cpu()
+    body_verts_joints = torch.cat([body_verts_only, body_joints])
+
+    return body_verts_joints.cpu()
 
 
 # def merger_body_hair(body_head_verts, texture, hair_input_path, avatar_output_path):
@@ -265,6 +272,9 @@ def merger_body_head(body_verts, head_verts):
 
 def merger_body_hair(body_head_verts, texture, hair_result, avatar_output_path):
 
+    body_joint_np = (body_head_verts.clone()[10475:]).numpy()
+    body_head_verts = body_head_verts.clone()[:10475]
+
     # process hair 
     hair_verts = np.asarray(hair_result['pc_all_valid'])
     lines = np.asarray(hair_result['lines'])
@@ -277,7 +287,7 @@ def merger_body_hair(body_head_verts, texture, hair_result, avatar_output_path):
             hair_faces.append([lines[id_f][0], lines[id_f][1], lines[id_f+1][1]])
     hair_faces = np.array(hair_faces, dtype=np.int32)
 
-    head_hair_verts = read_obj_file("body_head_recovery/models/head_model.obj")
+    head_hair_verts = read_obj_file(config.hairstep_head_temp_path)
     head_hair_verts = torch.tensor(head_hair_verts, dtype=torch.float32)
     scaleo, Ro, to = compute_similarity_transform_torch(head_hair_verts[config.hair_head_idx], body_head_verts[config.body_head_idx])
     trans_hair_vert = scaleo * Ro.mm(hair_verts.T) + to
@@ -296,13 +306,126 @@ def merger_body_hair(body_head_verts, texture, hair_result, avatar_output_path):
 
     bpy_refresh()
     hair_obj = process_hair(np_verts=trans_hair_vert, np_faces=hair_faces, colors=colors)
-
-    process_body_bpy(np_verts=body_head_verts.numpy(), texture_cv=texture)
+    human_fbx = process_body_bpy(np_body_verts=body_head_verts.numpy(),np_body_joints=body_joint_np, texture_cv=texture)
+    transfer_weight(source_fbx=human_fbx, target_name="Hair")
     # Select the object to export
     bpy.ops.object.select_all(action="SELECT")
 
     # Export the mesh to .glb format
     bpy.ops.export_scene.gltf(filepath=avatar_output_path, export_format='GLB', use_selection=True)
+    bpy_refresh()
+
+
+def process_body_bpy(np_body_verts, np_body_joints, texture_cv):
+
+    model_path = config.body_temp_fbx_path
+
+    # flip image corresponds with texture in blender
+    texture_cv = np.flipud(texture_cv)
+    texture_cv = cv2.cvtColor(texture_cv, cv2.COLOR_BGR2RGBA)  # Convert from BGR to RGB
+
+    bpy.ops.import_scene.fbx(filepath=model_path, ignore_leaf_bones=False, global_scale=1.0)
+    bpy.ops.object.select_all(action="DESELECT")
+    
+    human_fbx = bpy.data.objects[f"SMPLX-male"]
+    human_fbx.select_set(True)
+    bpy.context.view_layer.objects.active = human_fbx
+
+    bpy.ops.object.mode_set(mode="EDIT")
+
+    # update joint location
+    
+    for index in range(config.NUM_SMPLX_JOINTS):
+        bone = human_fbx.data.edit_bones[config.SMPLX_JOINT_NAMES[index]]
+        bone.head = (0.0, 0.0, 0.0)
+        bone.tail = (0.0, 0.0, 0.1)
+
+        # Convert SMPL-X joint locations to Blender joint locations
+        joint_location_smplx = np_body_joints[index]
+        bone_start = Vector( (joint_location_smplx[0], -joint_location_smplx[2], joint_location_smplx[1]) )
+        bone.translate(bone_start)
+
+    v = 0
+    for vert in human_fbx.children[0].data.vertices:
+        # vert.co = 100 * body_mesh[v]
+        vert.co[0] = np_body_verts[v][0]
+        vert.co[1] = -np_body_verts[v][2]
+        vert.co[2] = np_body_verts[v][1]
+        v = v + 1
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+
+    human_obj = human_fbx.children[0]
+    bpy.context.view_layer.objects.active = human_obj
+    ob = bpy.context.view_layer.objects.active
+
+    # Get the existing material (assuming there's only one material on the object)
+    material = ob.data.materials[0]
+
+    # Enable 'Use nodes' for the material if not already enabled
+    if not material.use_nodes:
+        material.use_nodes = True
+
+    # Get the material's node tree
+    nodes = material.node_tree.nodes
+
+    # Find the Principled BSDF node
+    principled_bsdf = None
+    for node in nodes:
+        if node.type == 'BSDF_PRINCIPLED':
+            principled_bsdf = node
+            break
+
+    if principled_bsdf is None:
+        raise Exception("No Principled BSDF shader found in the material")
+
+    # Create a new Image Texture node
+    texture_node = nodes.new(type='ShaderNodeTexImage')
+
+    # Create a Blender image and fill it with the OpenCV image data
+    image_height, image_width, _ = texture_cv.shape
+    texture_image = bpy.data.images.new(name="TextureImage", width=image_width, height=image_height)
+
+    # Flatten the image array and assign it to Blender image pixels
+    texture_image.pixels = (texture_cv / 255.0).flatten()
+    # Save the Blender image to a file
+    texture_image.filepath_raw = "//static/humanTexture.png"
+    texture_image.file_format = 'PNG'
+    texture_image.save()
+
+    # Assign the Blender image to the texture node
+    texture_node.image = texture_image
+
+    # Link the texture node to the Base Color input of the Principled BSDF node
+    links = material.node_tree.links
+    links.new(texture_node.outputs['Color'], principled_bsdf.inputs['Base Color'])
+
+    bpy.ops.file.pack_all()
+
+    return human_fbx
+
+
+def transfer_weight(source_fbx, target_name):
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    bpy.ops.object.select_all(action="DESELECT") #deselecting everything
+    bpy.data.objects[target_name].select_set(True) #selecting target
+    source_fbx.children[0].select_set(True) #selecting source
+#    
+    bpy.context.view_layer.objects.active = bpy.data.objects[target_name] #setting target as active
+#   
+    bpy.ops.object.mode_set(mode="WEIGHT_PAINT")
+    bpy.ops.object.data_transfer(use_reverse_transfer=True, data_type="VGROUP_WEIGHTS", 
+        layers_select_src="NAME", layers_select_dst="ALL") #transferring weights
+    bpy.ops.object.mode_set(mode="OBJECT")
+        
+
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.data.objects[target_name].select_set(True)
+    bpy.context.view_layer.objects.active = bpy.data.objects[target_name]
+    bpy.ops.object.modifier_add(type="ARMATURE")
+    bpy.context.object.modifiers["Armature"].object = source_fbx
 
 
 def bpy_refresh():
@@ -373,180 +496,3 @@ def process_hair(np_verts, np_faces, colors):
     bpy.ops.object.modifier_apply(modifier=decimate_modifier.name)
 
     return hair_obj
-
-
-def process_body_bpy(np_verts, texture_cv):
-    # flip image corresponds with texture in blender
-    texture_cv = np.flipud(texture_cv)
-    texture_cv = cv2.cvtColor(texture_cv, cv2.COLOR_BGR2RGBA)  # Convert from BGR to RGB
-
-    # Import the .obj file
-    bpy.ops.wm.obj_import(filepath="body_head_recovery/data/body_temp/body_temp.obj")
-
-    bpy.ops.object.select_all(action="DESELECT")
-    
-    bpy.data.objects["body_temp"].select_set(True)
-    # Set the selected object as the active object
-    bpy.context.view_layer.objects.active = bpy.data.objects["body_temp"]
-
-    # Assume the imported object is the active object
-    body_object = bpy.context.selected_objects[0]
-    for i, vert in enumerate(body_object.data.vertices):
-        vert.co = np_verts[i]
-
-    # Get the existing material (assuming there's only one material on the object)
-    material = body_object.data.materials[0]
-
-    # Enable 'Use nodes' for the material if not already enabled
-    if not material.use_nodes:
-        material.use_nodes = True
-
-    # Get the material's node tree
-    nodes = material.node_tree.nodes
-
-    # Find the Principled BSDF node
-    principled_bsdf = None
-    for node in nodes:
-        if node.type == 'BSDF_PRINCIPLED':
-            principled_bsdf = node
-            break
-
-    if principled_bsdf is None:
-        raise Exception("No Principled BSDF shader found in the material")
-
-    # Create a new Image Texture node
-    texture_node = nodes.new(type='ShaderNodeTexImage')
-
-    # Create a Blender image and fill it with the OpenCV image data
-    image_height, image_width, _ = texture_cv.shape
-    texture_image = bpy.data.images.new(name="TextureImage", width=image_width, height=image_height)
-
-    # Flatten the image array and assign it to Blender image pixels
-    texture_image.pixels = (texture_cv / 255.0).flatten()
-
-    # Assign the Blender image to the texture node
-    texture_node.image = texture_image
-
-    # Link the texture node to the Base Color input of the Principled BSDF node
-    links = material.node_tree.links
-    links.new(texture_node.outputs['Color'], principled_bsdf.inputs['Base Color'])
-
-
-# from body_head_recovery import config
-# from mathutils import Vector, Quaternion
-
-# def create_human_body(body_verts=None, body_joints=None, cv_body_tex=None):
-
-#     model_path = f"body_head_recovery/data/body_temp/{gender}.fbx"
-
-#     # flip image corresponds with texture in blender
-#     texture_cv = np.flipud(cv_body_tex)
-#     texture_cv = cv2.cvtColor(texture_cv, cv2.COLOR_BGR2RGBA)  # Convert from BGR to RGB
-
-#     bpy.ops.import_scene.fbx(filepath=model_path, ignore_leaf_bones=False, global_scale=1.0)
-#     bpy.ops.object.select_all(action="DESELECT")
-    
-#     fbx = bpy.data.objects[f"SMPLX-{gender}"]
-#     fbx.select_set(True)
-#     bpy.context.view_layer.objects.active = fbx
-
-#     bpy.ops.object.mode_set(mode="EDIT")
-
-#     # update joint location
-    
-#     for index in range(config.NUM_SMPLX_JOINTS):
-#         bone = fbx.data.edit_bones[config.SMPLX_JOINT_NAMES[index]]
-#         bone.head = (0.0, 0.0, 0.0)
-#         bone.tail = (0.0, 0.0, 0.1)
-
-#         # Convert SMPL-X joint locations to Blender joint locations
-#         joint_location_smplx = body_joints[index]
-#         bone_start = Vector( (joint_location_smplx[0], -joint_location_smplx[2], joint_location_smplx[1]) )
-#         bone.translate(bone_start)
-
-
-#     # for index in range(config.NUM_SMPLX_JOINTS):
-#     #     bone = fbx.data.edit_bones[config.SMPLX_JOINT_NAMES[index]]
-#     #     joint_location_smplx = body_joints[index]
-#     #     head = [joint_location_smplx[0], -joint_location_smplx[2], joint_location_smplx[1]]
-#     #     tail = head - np.array(bone.head[:]) + np.array(bone.tail[:])
-#     #     bone.head = head
-#     #     bone.tail = tail
-
-#     # update vertices location
-#     v = 0
-#     for vert in fbx.children[0].data.vertices:
-#         # vert.co = 100 * body_mesh[v]
-#         vert.co[0] = body_verts[v][0]
-#         vert.co[1] = -body_verts[v][2]
-#         vert.co[2] = body_verts[v][1]
-#         v = v + 1
-
-#     bpy.ops.object.mode_set(mode="OBJECT")
-#     bpy.ops.object.select_all(action="DESELECT")
-
-#     human_obj = fbx.children[0]
-#     bpy.context.view_layer.objects.active = human_obj
-#     ob = bpy.context.view_layer.objects.active
-
-#     # Get the existing material (assuming there's only one material on the object)
-#     material = ob.data.materials[0]
-
-#     # Enable 'Use nodes' for the material if not already enabled
-#     if not material.use_nodes:
-#         material.use_nodes = True
-
-#     # Get the material's node tree
-#     nodes = material.node_tree.nodes
-
-#     # Find the Principled BSDF node
-#     principled_bsdf = None
-#     for node in nodes:
-#         if node.type == 'BSDF_PRINCIPLED':
-#             principled_bsdf = node
-#             break
-
-#     if principled_bsdf is None:
-#         raise Exception("No Principled BSDF shader found in the material")
-
-#     # Create a new Image Texture node
-#     texture_node = nodes.new(type='ShaderNodeTexImage')
-
-#     # Create a Blender image and fill it with the OpenCV image data
-#     image_height, image_width, _ = texture_cv.shape
-#     texture_image = bpy.data.images.new(name="TextureImage", width=image_width, height=image_height)
-
-#     # Flatten the image array and assign it to Blender image pixels
-#     texture_image.pixels = (texture_cv / 255.0).flatten()
-#     # Save the Blender image to a file
-#     texture_image.filepath_raw = "//TextureImage.png"
-#     texture_image.file_format = 'PNG'
-#     texture_image.save()
-
-#     # Assign the Blender image to the texture node
-#     texture_node.image = texture_image
-
-#     # Link the texture node to the Base Color input of the Principled BSDF node
-#     links = material.node_tree.links
-#     links.new(texture_node.outputs['Color'], principled_bsdf.inputs['Base Color'])
-
-#     bpy.ops.file.pack_all()
-#     bpy.ops.object.select_all(action="SELECT")
-#     # bpy.ops.export_scene.fbx(filepath=f"test_male.fbx", path_mode="COPY", embed_textures=True, bake_anim=False, add_leaf_bones=False)
-    
-#     bpy.ops.export_scene.gltf(filepath=f"test_{gender}.glb", export_format='GLB', use_selection=True)
-#     return fbx
-
-# body_verts, joints, measurement = body_from_image_params(gender=gender, body_image_f=body_image_f, height_m=height_m, weight_kg=weight_kg)
-
-# joints = joints[:, :55]
-# # print(joints.shape)
-# # print(config.NUM_SMPLX_JOINTS)
-
-# # np.savetxt("body.txt", body_verts.numpy())
-# # np.savetxt("joints.txt", joints.numpy())
-
-# texture = cv2.imread("TextureImage.png")
-# bpy_refresh()
-# create_human_body(body_verts=body_verts.numpy(), body_joints=joints.numpy(), cv_body_tex=texture)
-# np.savetxt("test_male.txt", body_verts.numpy())
