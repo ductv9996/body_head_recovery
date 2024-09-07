@@ -31,8 +31,16 @@ SMPLX_JOINT_NAMES = [
 NUM_SMPLX_JOINTS = len(SMPLX_JOINT_NAMES)
 
 body_temp_fbx_path = "body_head_recovery/data/body_temp/male.fbx"
+body_temp_obj_path = "body_head_recovery/data/body_temp/body_temp.obj"
 hairstep_head_temp_path = "body_head_recovery/models/head_model.obj"
 texture_dir = "body_head_recovery/data/texture"
+
+default_hair_path = {"male":"body_head_recovery/data/body_temp/hair/male_hair.glb",
+                     "female":"body_head_recovery/data/body_temp/hair/female_hair.glb"}
+
+# idx for merger body and hair
+body_head_idx = [8949, 8966, 1312, 447]
+hair_head_idx = [3834, 3463, 1010, 4089]
 
 # # head texture params
 # faces_expand = torch.load("body_head_recovery/data/body_params/face_expand.pt")
@@ -75,10 +83,6 @@ idx_smplx2mp = torch.load("body_head_recovery/mapping/smplx2mp_refine.pt").to(dt
 
 right_smplx_idx = idx_smplx2mp[right_mp_idx]
 left_smplx_idx = idx_smplx2mp[left_mp_idx]
-
-# idx for merger body and hair
-body_head_idx = [8949, 8966, 1312, 447]
-hair_head_idx = [3834, 3463, 1010, 4089]
 
 
 idx_lmk_68_right = [0, 1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 27, 28, 29, 30,

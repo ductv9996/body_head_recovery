@@ -17,6 +17,7 @@ from body_head_recovery.bodyrecon.body_recon import body_from_image_params
 from body_head_recovery.Color_Transfer.transfer_color import run_transfer
 from body_head_recovery.Inpainting.head_inpaint import run_inpaint
 
+import mathutils
 from mathutils import Vector, Quaternion
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -301,13 +302,42 @@ def merger_body_hair(body_head_verts, texture, hair_result, avatar_output_path):
         [0, 0, 1],
         [0, -1, 0]
     ])
-
     trans_hair_vert = trans_hair_vert.dot(rotation_matrix)
 
     bpy_refresh()
-    # hair_obj = process_hair(np_verts=trans_hair_vert, np_faces=hair_faces, colors=colors)
+    bpy.ops.import_scene.gltf(filepath=config.default_hair_path["male"])
+    hair_obj = process_hair(np_verts=trans_hair_vert, np_faces=hair_faces, colors=colors)
     human_fbx = process_body_bpy(np_body_verts=body_head_verts.numpy(),np_body_joints=body_joint_np, texture_cv=texture)
-    # transfer_weight(source_fbx=human_fbx, target_name="Hair")
+    transfer_weight(source_fbx=human_fbx, target_name="Hair")
+    # Select the object to export
+    bpy.ops.object.select_all(action="SELECT")
+
+    # Export the mesh to .glb format
+    bpy.ops.export_scene.gltf(filepath=avatar_output_path, export_format='GLB', use_selection=True)
+    bpy_refresh()
+
+
+def merger_body_hair_temp(body_head_verts, texture, hair_glb_path, hair_color, avatar_output_path):
+
+    body_joint_np = (body_head_verts.clone()[10475:]).numpy()
+    body_head_verts = body_head_verts.clone()[:10475]
+
+    ## process default hair
+    body_default_verts = torch.tensor(read_obj_file(config.body_temp_obj_path), dtype=torch.float32)
+    scaleo, Ro, to = compute_similarity_transform_torch(body_default_verts[config.body_head_idx], body_head_verts[config.body_head_idx])
+
+    bpy_refresh()
+    bpy.ops.import_scene.gltf(filepath=hair_glb_path)
+    process_default_hair(scale=scaleo.numpy(),rotation_matrix=Ro.numpy(), translation=to.numpy(), colors=None)
+    human_fbx = process_body_bpy(np_body_verts=body_head_verts.numpy(),np_body_joints=body_joint_np, texture_cv=texture)
+
+    # rig hair
+    Hair_Model = bpy.data.objects['Hair_Model']
+    # Get all children of the object
+    children = Hair_Model.children
+    # Loop through children and print their names
+    for child in children:
+        transfer_weight(source_fbx=human_fbx, target_name=child.name)
     # Select the object to export
     bpy.ops.object.select_all(action="SELECT")
 
@@ -452,7 +482,65 @@ def bpy_refresh():
         bpy.data.cameras.remove(item, do_unlink=True)
         # Clear existing data
     bpy.ops.wm.read_factory_settings(use_empty=True)
-        
+
+
+def process_default_hair(scale, rotation_matrix, translation, colors):
+    # Select the object to transform
+    hair_model = bpy.data.objects["Hair_Model"]
+
+
+    # Your provided 3x3 rotation matrix
+    rotation_matrix_3x3 = mathutils.Matrix((
+        (rotation_matrix[0,0], rotation_matrix[0,1], rotation_matrix[0,2]),
+        (rotation_matrix[1,0],  rotation_matrix[1,1], rotation_matrix[1,2]),
+        (rotation_matrix[2,0],  rotation_matrix[2,1],  rotation_matrix[2,2])
+    ))
+
+    # Convert to 4x4 rotation matrix by adding the extra row and column
+    rotation_matrix_4x4 = rotation_matrix_3x3.to_4x4()
+
+    # Scale matrix (example: scale by 2 in all axes)
+    scale_matrix = mathutils.Matrix.Scale(scale, 4)
+
+    # Translation vector (example: move by (3, 5, 2))
+    translation_vector = mathutils.Vector((translation[0], translation[1], translation[2]))
+
+    # Create the translation matrix
+    translation_matrix = mathutils.Matrix.Translation(translation_vector)
+
+    # Conversion matrix to switch from Y-up to Z-up (Blender's system)
+    rotx_matrix = mathutils.Matrix((
+        (1, 0, 0, 0),  # X stays the same
+        (0, 0, 1, 0),  # Y becomes Z
+        (0, -1, 0, 0),  # Z becomes Y
+        (0, 0, 0, 1)   # Keep the homogeneous coordinate
+    ))
+    revert_rotx_matrix = mathutils.Matrix((
+        (1, 0, 0, 0),  # X stays the same
+        (0, 0, -1, 0),  # Y becomes Z
+        (0, 1, 0, 0),  # Z becomes Y
+        (0, 0, 0, 1)   # Keep the homogeneous coordinate
+    ))
+
+    # Combine transformations (translation * rotation * scale) with conversion
+    transform_matrix = translation_matrix @ scale_matrix @ rotation_matrix_4x4 @ rotx_matrix 
+
+
+    # Apply transformation to object
+    hair_model.matrix_world = hair_model.matrix_world @ transform_matrix
+    # Deselect all objects first
+    bpy.ops.object.select_all(action='DESELECT')
+
+    # Select all objects in the scene
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    bpy.ops.object.select_all(action='DESELECT')
+
+    hair_model.matrix_world = hair_model.matrix_world @ revert_rotx_matrix
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
 
 def process_hair(np_verts, np_faces, colors):
     # Create mesh and object
