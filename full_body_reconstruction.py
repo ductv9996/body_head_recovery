@@ -340,7 +340,6 @@ def merger_body_hair_temp(body_head_verts, texture, hair_glb_path, hair_color, a
         transfer_weight(source_fbx=human_fbx, target_name=child.name)
     # Select the object to export
     bpy.ops.object.select_all(action="SELECT")
-
     # Export the mesh to .glb format
     bpy.ops.export_scene.gltf(filepath=avatar_output_path, export_format='GLB', use_selection=True)
     bpy_refresh()
@@ -367,13 +366,18 @@ def process_body_bpy(np_body_verts, np_body_joints, texture_cv):
     
     for index in range(config.NUM_SMPLX_JOINTS):
         bone = human_fbx.data.edit_bones[config.SMPLX_JOINT_NAMES[index]]
-        bone.head = (0.0, 0.0, 0.0)
-        bone.tail = (0.0, 0.0, 0.1)
+        # bone.head = (0.0, 0.0, 0.0)
+        # bone.tail = (0.0, 0.0, 0.1)
 
-        # Convert SMPL-X joint locations to Blender joint locations
-        joint_location_smplx = np_body_joints[index]
-        bone_start = Vector( (joint_location_smplx[0], -joint_location_smplx[2], joint_location_smplx[1]) )
-        bone.translate(bone_start)
+        # # Convert SMPL-X joint locations to Blender joint locations
+        # joint_location_smplx = np_body_joints[index]
+        # bone_start = Vector((joint_location_smplx[0], -joint_location_smplx[2], joint_location_smplx[1]) )
+        # bone.translate(bone_start)
+
+        head = np.array([np_body_joints[index][0], -np_body_joints[index][2], np_body_joints[index][1]])
+        tail = head - np.array(bone.head[:]) + np.array(bone.tail[:])
+        bone.head = head
+        bone.tail = tail
 
     v = 0
     for vert in human_fbx.children[0].data.vertices:
