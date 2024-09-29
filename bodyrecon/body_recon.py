@@ -44,7 +44,9 @@ def body_from_image_params(gender, body_image_f, height_m, weight_kg):
                                 create_leye_pose=True,
                                 create_reye_pose=True,
                                 create_transl=False,
-                                dtype=torch.float32,)
+                                dtype=torch.float32,
+                                flat_hand_mean=True,
+                                num_pca_comps=6)
     model_smplx.to(device=config.DEVICE)
 
     global_orient=torch.zeros(1,3, device=config.DEVICE, dtype=torch.float32)
@@ -57,6 +59,8 @@ def body_from_image_params(gender, body_image_f, height_m, weight_kg):
     body_pose[0, 41] = np.pi/18
     body_pose[0, 47] = -np.pi/4.5
     body_pose[0, 50] = np.pi/4.5
+    # right_hand_pose = torch.zeros(1,6,device=config.DEVICE)
+    # left_hand_pose = torch.zeros(1,6,device=config.DEVICE)
     model_show = model_smplx(global_orient=global_orient, 
                              betas=betas_10,
                              body_pose=body_pose,

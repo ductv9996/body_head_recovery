@@ -30,7 +30,7 @@ SMPLX_JOINT_NAMES = [
 ]
 NUM_SMPLX_JOINTS = len(SMPLX_JOINT_NAMES)
 
-body_temp_fbx_path = "body_head_recovery/data/body_temp/male.fbx"
+body_temp_fbx_path = "body_head_recovery/data/body_temp/male_flat.fbx"
 body_temp_obj_path = "body_head_recovery/data/body_temp/body_temp.obj"
 hairstep_head_temp_path = "body_head_recovery/models/head_model.obj"
 texture_dir = "body_head_recovery/data/texture"
