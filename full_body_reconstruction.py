@@ -87,18 +87,37 @@ def head_recon(gender, image_f, image_r, image_l):
     landmarks_l= torch.tensor(landmarks_l)
     croped_img_l, croped_lmks_l = crop_image(image_l, landmarks_l)
 
+    vec_r = croped_lmks_r[93] - croped_lmks_r[1]
+    vec_l = croped_lmks_r[323] - croped_lmks_r[1]
+
+    if abs(vec_r[0]) < abs(vec_l[0]):
+        swap_lmk = croped_lmks_l.clone()
+        swap_img = croped_img_l.copy()
+        croped_lmks_l = croped_lmks_r
+        croped_img_l = croped_img_r
+        croped_lmks_r = swap_lmk
+        croped_img_r = swap_img
+
     # cv2.namedWindow("aa", cv2.WINDOW_NORMAL)
     # cv2.resizeWindow("aa", 1024, 1024)
-    # for p1 in croped_lmks_f[config.idx_embedding_mp]:
-    #     cv2.circle(croped_img_f, (int(p1[0]), int(p1[1])), 2, (0, 0, 255), -1)
-    #     cv2.imshow("aa", croped_img_f)
-    #     cv2.waitKey(0)
-    # for p1 in croped_lmks_f[config.leftEyeIris]:
-    #     cv2.circle(croped_img_f, (int(p1[0]), int(p1[1])), 2, (0, 255, 0), -1)
-    #     cv2.imshow("aa", croped_img_f)
-    #     cv2.waitKey(0)
-    
+    # img_f = croped_img_f.copy()
+    # img_r = croped_img_r.copy()
+    # img_l = croped_img_l.copy()
+    # for p1 in croped_lmks_f:
+    #     cv2.circle(img_f, (int(p1[0]), int(p1[1])), 2, (0, 0, 255), -1)
+        
+    # for p1 in croped_lmks_r:
+    #     cv2.circle(img_r, (int(p1[0]), int(p1[1])), 2, (0, 255, 0), -1)
+        
+    # for p1 in croped_lmks_l:
+    #     cv2.circle(img_l, (int(p1[0]), int(p1[1])), 2, (0, 255, 0), -1)
+        
+    # cv2.imshow("cc", img_l)
+    # cv2.imshow("bb", img_r)
+    # cv2.imshow("aa", img_f)
+    # cv2.waitKey(0)
     # cv2.destroyAllWindows()
+
     head_optim = HEAD_OPTIM(gender=gender, vis=False)
 
     verts_show, verts_f, cam_f, verts_r, cam_r, verts_l, cam_l = head_optim(image_f=croped_img_f, landmarks_f=croped_lmks_f, 
@@ -183,6 +202,7 @@ def run_head(gender, image_f, image_r, image_l):
     transfered_img = run_transfer(src_img_cv=src_img_cv, tar_img_cv=tar_img_cv)
 
     transfered_texture = config.full_face_mask*final_texture + (1-config.full_face_mask)*transfered_img
+
     inpainted_texture = run_inpaint(orig_img=transfered_texture.astype(np.uint8))
 
     # process inner_wear
