@@ -58,6 +58,7 @@ innerwear_mask_female = cv2.imread("body_head_recovery/data/texture/mask_innerwe
 
 
 full_face_mask = cv2.imread("body_head_recovery/data/body_params/head_mask.png")/255.
+extend_face_mask = cv2.imread("body_head_recovery/data/body_params/extend_head_mask.png")/255.
 
 eye_mask = cv2.imread('body_head_recovery/data/body_params/mask_eye.png')
 head_mask = cv2.imread("body_head_recovery/data/body_params/head_mask.png")/255.

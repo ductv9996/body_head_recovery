@@ -134,10 +134,6 @@ def head_recon(gender, image_f, image_r, image_l):
     final_texture = possion_blending(src=texture_f, tar=texture_lr, mask_compose=config.uv_face_front, kernel_size=5)
     
     final_texture = config.head_mask*final_texture + (1-config.head_mask)*255
-    gray_mask_eye = cv2.cvtColor(config.eye_mask, cv2.COLOR_BGR2GRAY)
-    ret_eye, thresh_mask_eye = cv2.threshold(gray_mask_eye, 127, 255, cv2.THRESH_BINARY)
-    mask_eye = np.where(thresh_mask_eye == 255)
-    final_texture[mask_eye] = config.eye_brown[mask_eye]
     
     return verts_show.cpu().squeeze(), final_texture.astype(np.uint8)
 
@@ -199,11 +195,18 @@ def run_head(gender, image_f, image_r, image_l):
     src_img_cv = cv2.imread(f"{config.texture_dir}/{gender}_vang_hair.png")
     tar_img_cv = final_texture.copy()[232:232+410, 402:402+410]
 
-    transfered_img = run_transfer(src_img_cv=src_img_cv, tar_img_cv=tar_img_cv)
+    transfered_img = run_transfer(src_img_cv=src_img_cv.copy(), tar_img_cv=tar_img_cv)
 
     transfered_texture = config.full_face_mask*final_texture + (1-config.full_face_mask)*transfered_img
 
     inpainted_texture = run_inpaint(orig_img=transfered_texture.astype(np.uint8))
+
+    # smooth_inpainted_texture = possion_blending(src=inpainted_texture, tar=src_img_cv, mask_compose=config.extend_face_mask, kernel_size=1)
+
+    gray_mask_eye = cv2.cvtColor(config.eye_mask, cv2.COLOR_BGR2GRAY)
+    ret_eye, thresh_mask_eye = cv2.threshold(gray_mask_eye, 127, 255, cv2.THRESH_BINARY)
+    mask_eye = np.where(thresh_mask_eye == 255)
+    inpainted_texture[mask_eye] = config.eye_brown[mask_eye]
 
     # process inner_wear
     if gender =="male":
