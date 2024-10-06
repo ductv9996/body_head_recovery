@@ -19,7 +19,7 @@ from body_head_recovery.Inpainting.head_inpaint import run_inpaint
 
 import mathutils
 from mathutils import Vector, Quaternion
-
+from laplacian_pyramid_blend import LaplacianPyramidBlender
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import warnings
@@ -130,9 +130,11 @@ def head_recon(gender, image_f, image_r, image_l):
     texture_r = transfer_texture(body_verts=verts_r, cam=cam_r, croped_img=croped_img_r)
     texture_l = transfer_texture(body_verts=verts_l, cam=cam_l, croped_img=croped_img_l)
 
-    texture_lr = possion_blending(src=texture_l, tar=texture_r, mask_compose=config.uv_face_left, kernel_size=1)
-    final_texture = possion_blending(src=texture_f, tar=texture_lr, mask_compose=config.uv_face_front, kernel_size=5)
-    
+    # texture_lr = possion_blending(src=texture_l, tar=texture_r, mask_compose=config.uv_face_left, kernel_size=1)
+    texture_lr = config.uv_face_left*texture_l + (1-config.uv_face_left)*texture_r
+    # final_texture = possion_blending(src=texture_f, tar=texture_lr, mask_compose=config.uv_face_front, kernel_size=5)
+    blender = LaplacianPyramidBlender()
+    final_texture = blender(texture_f, texture_lr, config.uv_face_front*255)
     final_texture = config.head_mask*final_texture + (1-config.head_mask)*255
     
     return verts_show.cpu().squeeze(), final_texture.astype(np.uint8)
@@ -193,15 +195,19 @@ def run_head(gender, image_f, image_r, image_l):
 
     # process body skin
     src_img_cv = cv2.imread(f"{config.texture_dir}/{gender}_vang_hair.png")
-    tar_img_cv = final_texture.copy()[232:232+410, 402:402+410]
+    # tar_img_cv = final_texture.copy()[232:232+410, 402:402+410]
+    tar_img_cv = final_texture.copy()[426:426+80, 719:719+80]
 
+    # transfered_img_ref = run_transfer(src_img_cv=src_img_cv.copy(), tar_img_cv=tar_img_cv)
+    
+    # mean_vals = cv2.mean(transfered_img_ref[1020:1020+250, 510:510+250])[:3]
+    # image_ref = np.zeros((128, 128, 3), np.uint8)
+    # image_ref[:] = (int(mean_vals[0]), int(mean_vals[1]), int(mean_vals[2]))
     transfered_img = run_transfer(src_img_cv=src_img_cv.copy(), tar_img_cv=tar_img_cv)
 
     transfered_texture = config.full_face_mask*final_texture + (1-config.full_face_mask)*transfered_img
 
     inpainted_texture = run_inpaint(orig_img=transfered_texture.astype(np.uint8))
-
-    # smooth_inpainted_texture = possion_blending(src=inpainted_texture, tar=src_img_cv, mask_compose=config.extend_face_mask, kernel_size=1)
 
     gray_mask_eye = cv2.cvtColor(config.eye_mask, cv2.COLOR_BGR2GRAY)
     ret_eye, thresh_mask_eye = cv2.threshold(gray_mask_eye, 127, 255, cv2.THRESH_BINARY)
