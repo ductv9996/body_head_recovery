@@ -137,7 +137,7 @@ def head_recon(gender, image_f, image_r, image_l):
     final_texture = blender(texture_f, texture_lr, config.uv_face_front*255)
     final_texture = config.head_mask*final_texture + (1-config.head_mask)*255
     
-    return verts_show.cpu().squeeze(), final_texture.astype(np.uint8)
+    return verts_show.cpu().squeeze(), final_texture.astype(np.uint8), texture_f
 
 
 # def merger_body_head(gender, body_verts, image_f, image_r, image_l):
@@ -191,12 +191,12 @@ def run_head(gender, image_f, image_r, image_l):
         image_l = cv2.resize(image_l, (720, int(720*image_l.shape[0]/image_l.shape[1])))
 
     
-    head_verts, final_texture = head_recon(gender=gender, image_f=image_f, image_r=image_r, image_l=image_l)
+    head_verts, final_texture, texture_f = head_recon(gender=gender, image_f=image_f, image_r=image_r, image_l=image_l)
 
     # process body skin
     src_img_cv = cv2.imread(f"{config.texture_dir}/{gender}_vang_hair.png")
-    # tar_img_cv = final_texture.copy()[232:232+410, 402:402+410]
-    tar_img_cv = final_texture.copy()[426:426+80, 719:719+80]
+    # tar_img_cv = texture_f.copy()[232:232+410, 402:402+410]
+    tar_img_cv = texture_f.copy()[144:144+408, 424:424+371]
 
     # transfered_img_ref = run_transfer(src_img_cv=src_img_cv.copy(), tar_img_cv=tar_img_cv)
     
@@ -208,21 +208,22 @@ def run_head(gender, image_f, image_r, image_l):
     transfered_texture = config.full_face_mask*final_texture + (1-config.full_face_mask)*transfered_img
 
     inpainted_texture = run_inpaint(orig_img=transfered_texture.astype(np.uint8))
-
-    gray_mask_eye = cv2.cvtColor(config.eye_mask, cv2.COLOR_BGR2GRAY)
-    ret_eye, thresh_mask_eye = cv2.threshold(gray_mask_eye, 127, 255, cv2.THRESH_BINARY)
-    mask_eye = np.where(thresh_mask_eye == 255)
-    inpainted_texture[mask_eye] = config.eye_brown[mask_eye]
+    smooth_inpainted_texture = possion_blending(inpainted_texture.astype(np.uint8), transfered_img.astype(np.uint8), config.extend_face_mask, kernel_size=5)
 
     # process inner_wear
     if gender =="male":
         inner_wear_img = config.innerwear_male
         inner_wear_mask = config.innerwear_mask_male
+        complete_texture = inner_wear_mask*inner_wear_img + (1-inner_wear_mask)*inpainted_texture
     else:
         inner_wear_img = config.innerwear_female
         inner_wear_mask = config.innerwear_mask_female
+        complete_texture = inner_wear_mask*inner_wear_img + (1-inner_wear_mask)*smooth_inpainted_texture
     
-    complete_texture = inner_wear_mask*inner_wear_img + (1-inner_wear_mask)*inpainted_texture
+    gray_mask_eye = cv2.cvtColor(config.eye_mask, cv2.COLOR_BGR2GRAY)
+    ret_eye, thresh_mask_eye = cv2.threshold(gray_mask_eye, 127, 255, cv2.THRESH_BINARY)
+    mask_eye = np.where(thresh_mask_eye == 255)
+    complete_texture[mask_eye] = config.eye_brown[mask_eye]
 
     return head_verts.cpu(), complete_texture.astype(np.uint8)
 
